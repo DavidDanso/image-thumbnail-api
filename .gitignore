@@ -9,13 +9,15 @@ __pycache__/
 dist/
 build/
 
+# Ignore the uploads folder and all its contents
+uploads/
+
 # --- Virtual environments ---
 .venv/
 venv/
 env/
 ENV/
 .env
-uploads/
 
 # --- IDE / Editor ---
 .vscode/
