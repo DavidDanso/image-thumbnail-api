@@ -8,10 +8,6 @@ import shutil
 from ..database import get_db
 from .. import models, schemas
 
-# ============================================================================
-# Configuration
-# ============================================================================
-
 # Directory where uploaded images will be stored
 UPLOAD_DIR = Path("uploads")
 
