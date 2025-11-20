@@ -12,9 +12,21 @@ router = APIRouter(
 ###################### create new USER { CREATE } #####################
 @router.post("/register", status_code=status.HTTP_201_CREATED, response_model=schemas.UserResponse)
 def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
+    # Check if username exists
+    existing_username = db.query(models.User).filter(models.User.username == user.username).first()
+    if existing_username:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, 
+                            detail=f"Username '{user.username}' is already taken")
+    
+    # Check if email exists
+    existing_email = db.query(models.User).filter(models.User.email == user.email).first()
+    if existing_email:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, 
+                            detail=f"Email '{user.email}' is already registered")
+    
+    
     hash_password = utils.get_password_hash(user.password) 
     user.password = hash_password
-
     new_user = models.User(**user.model_dump())
     db.add(new_user)
     db.commit()

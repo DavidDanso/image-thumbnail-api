@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, EmailStr
+from uuid import UUID
 
 ###################### USER SCEHMAS
 class UserBase(BaseModel):
@@ -12,7 +13,7 @@ class UserCreate(UserBase):
     pass
 
 class UserResponse(BaseModel):
-    id: int
+    id: UUID
     username: str
     email: EmailStr
     created_at: datetime
@@ -41,7 +42,7 @@ class TokenData(BaseModel):
 
 ###################### IMAGE SCHEMAS
 class ImageMetadataResponse(BaseModel):
-    id: int
+    id: UUID
     filename: str
     content_type: str
     size: int

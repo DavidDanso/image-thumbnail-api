@@ -1,15 +1,17 @@
 from sqlalchemy import TIMESTAMP, Column, DateTime, ForeignKey, Integer, String, func, text
 from .database import Base
+import uuid
 from sqlalchemy.orm import relationship
+from sqlalchemy.dialects.postgresql import UUID
 
 
 ###################### USER MODEL
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, nullable=False)
-    username = Column(String, nullable=False)
-    email = Column(String, nullable=False)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    username = Column(String, nullable=False, unique=True)
+    email = Column(String, nullable=False, unique=True)
     password = Column(String, nullable=False)
     created_at = Column(TIMESTAMP(timezone=True), server_default=text("now()"), nullable=False)
 
@@ -18,7 +20,7 @@ class User(Base):
 class Image(Base):
     __tablename__ = "images"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     filename = Column(String, unique=True, index=True)
     content_type = Column(String)
     size = Column(Integer)
