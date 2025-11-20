@@ -5,7 +5,8 @@ import uuid
 import shutil
 
 from ..database import get_db
-from .. import models, schemas
+from .. import models, schemas, oauth2
+
 
 # Configuration
 UPLOAD_DIR = Path("uploads")
@@ -86,7 +87,8 @@ def create_db_record(
     filename: str,
     content_type: str,
     file_size: int,
-    filepath: str
+    filepath: str,
+    owner_id: int
 ) -> models.Image:
     """
     Create image record in database.
@@ -105,7 +107,8 @@ def create_db_record(
         filename=filename,
         content_type=content_type,
         size=file_size,
-        path=filepath
+        path=filepath,
+        owner_id=owner_id
     )
     db.add(image)
     db.commit()
@@ -124,7 +127,8 @@ def create_db_record(
 )
 async def upload_image(
     file: UploadFile = File(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(oauth2.get_current_user)
 ):
     """
     Upload and store an image file.
@@ -156,10 +160,11 @@ async def upload_image(
         filename=filename,
         content_type=file.content_type,
         file_size=len(content),
-        filepath=str(filepath)
+        filepath=str(filepath),
+        owner_id=current_user.id
     )
     
     return schemas.ImageUploadResponse(
-        message="Upload successful",
+        message="Image uploaded successfully",
         metadata=image_record
     )

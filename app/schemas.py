@@ -48,6 +48,7 @@ class ImageMetadataResponse(BaseModel):
     size: int
     path: str
     upload_time: datetime
+    owner: UserResponse
     
     class Config:
         from_attributes = True

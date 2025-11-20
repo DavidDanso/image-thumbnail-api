@@ -27,7 +27,8 @@ class Image(Base):
     upload_time = Column(DateTime(timezone=True), server_default=func.now())
     path = Column(String)
     created_at = Column(TIMESTAMP(timezone=True), server_default=text("now()"), nullable=False)
-
+    owner_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    owner = relationship("User")
 
 
 # class Task(Base):
