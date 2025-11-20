@@ -88,7 +88,7 @@ def create_db_record(
     content_type: str,
     file_size: int,
     filepath: str,
-    owner_id: int
+    owner_id: uuid.UUID
 ) -> models.Image:
     """
     Create image record in database.
@@ -99,25 +99,23 @@ def create_db_record(
         content_type: MIME type
         file_size: File size in bytes
         filepath: Full file path
-        
-    Returns:
-        Created image record
+        owner_id: ID of the user uploading the image
     """
-    image = models.Image(
+    db_image = models.Image(
         filename=filename,
         content_type=content_type,
         size=file_size,
         path=filepath,
         owner_id=owner_id
     )
-    db.add(image)
+    db.add(db_image)
     db.commit()
-    db.refresh(image)
-    return image
+    db.refresh(db_image)
+    return db_image
 
 
 # ============================================================================
-# API Endpoint
+# Upload Endpoint
 # ============================================================================
 
 @router.post(
@@ -168,3 +166,39 @@ async def upload_image(
         message="Image uploaded successfully",
         metadata=image_record
     )
+
+
+###################### all uploads { READ } #####################
+@router.get("/upload", response_model=list[schemas.ImageMetadataResponse])
+def get_uploads(db: Session = Depends(get_db), 
+              get_user: int = Depends(oauth2.get_current_user)):
+    
+    all_uploads = db.query(models.Image).filter(models.Image.owner_id == get_user.id).all()
+    return all_uploads
+
+
+###################### get image metadata by ID { READ } #####################
+@router.get("/{id}", response_model=schemas.ImageMetadataResponse)
+def get_image_metadata(
+    id: uuid.UUID, 
+    db: Session = Depends(get_db), 
+    current_user: models.User = Depends(oauth2.get_current_user)
+):
+    """
+    Get metadata for a specific image by ID.
+    """
+    image = db.query(models.Image).filter(models.Image.id == id).first()
+
+    if not image:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Image not found"
+        )
+
+    if image.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this image"
+        )
+
+    return image
