@@ -1,148 +1,119 @@
 from fastapi import APIRouter, Depends, status, UploadFile, File, HTTPException
 from sqlalchemy.orm import Session
-import os
-import uuid
 from pathlib import Path
+import uuid
 import shutil
 
 from ..database import get_db
 from .. import models, schemas
 
-# Directory where uploaded images will be stored
+# Configuration
 UPLOAD_DIR = Path("uploads")
-
-# Maximum allowed file size in megabytes
 MAX_FILE_SIZE_MB = 10
+ALLOWED_TYPES = {"image/jpeg", "image/png", "image/gif"}
 
-# MIME types accepted for upload
-ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif"}
-
-# ============================================================================
-# Setup
-# ============================================================================
-
-# Create upload directory if it doesn't exist
+# Ensure upload directory exists
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-# Initialize router with prefix and tags for API documentation
-router = APIRouter(
-    prefix="/api/images",
-    tags=["Uploads"]
-)
+# Router setup
+router = APIRouter(prefix="/api/images", tags=["Uploads"])
 
 
 # ============================================================================
-# Helper Functions
+# Validation Functions
 # ============================================================================
 
-def validate_file_type(content_type: str) -> None:
+def validate_image(file: UploadFile, content: bytes) -> None:
     """
-    Validate that the uploaded file is an allowed image type.
+    Validate uploaded file type and size.
     
     Args:
-        content_type: MIME type of the uploaded file
+        file: Uploaded file object
+        content: File content as bytes
         
     Raises:
-        HTTPException: If file type is not allowed
+        HTTPException: If validation fails
     """
-    if content_type not in ALLOWED_IMAGE_TYPES:
-        allowed_types = ", ".join(ALLOWED_IMAGE_TYPES)
+    # Check file type
+    if file.content_type not in ALLOWED_TYPES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid file type. Allowed types: {allowed_types}"
+            detail=f"Invalid file type. Allowed: {', '.join(ALLOWED_TYPES)}"
         )
-
-
-def validate_file_size(file_size: int) -> None:
-    """
-    Validate that the file size doesn't exceed the maximum allowed.
     
-    Args:
-        file_size: Size of the file in bytes
-        
-    Raises:
-        HTTPException: If file size exceeds the limit
-    """
-    # Convert MB to bytes for comparison
+    # Check file size
     max_bytes = MAX_FILE_SIZE_MB * 1024 * 1024
-    
-    if file_size > max_bytes:
+    if len(content) > max_bytes:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"File too large. Maximum size: {MAX_FILE_SIZE_MB}MB"
+            detail=f"File exceeds {MAX_FILE_SIZE_MB}MB limit"
         )
 
 
-def generate_unique_filename(original_filename: str) -> str:
+def generate_filename(original_filename: str) -> str:
     """
-    Generate a unique filename while preserving the original extension.
-    
-    This prevents filename collisions and potential security issues
-    from user-provided filenames.
+    Generate unique filename preserving original extension.
     
     Args:
-        original_filename: Original name of the uploaded file
+        original_filename: Original file name
         
     Returns:
-        A unique filename with the original extension
+        Unique filename with UUID prefix
     """
-    # Extract file extension (e.g., ".jpg")
-    file_extension = Path(original_filename).suffix
-    
-    # Generate unique filename using UUID hex string
-    unique_name = f"{uuid.uuid4().hex}{file_extension}"
-    
-    return unique_name
+    extension = Path(original_filename).suffix.lower()
+    return f"{uuid.uuid4().hex}{extension}"
 
 
-def save_file_to_disk(file: UploadFile, filepath: Path) -> None:
+# ============================================================================
+# File Operations
+# ============================================================================
+
+def save_image(file: UploadFile, filepath: Path) -> None:
     """
-    Save the uploaded file to the specified path on disk.
+    Save uploaded file to disk.
     
     Args:
-        file: FastAPI UploadFile object
-        filepath: Destination path where file will be saved
+        file: Uploaded file object
+        filepath: Destination path
     """
-    # Open destination file and copy uploaded content
     with open(filepath, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
 
-def create_image_record(db: Session, filename: str, content_type: str, 
-                        file_size: int, filepath: str) -> models.Image:
+def create_db_record(
+    db: Session,
+    filename: str,
+    content_type: str,
+    file_size: int,
+    filepath: str
+) -> models.Image:
     """
-    Create and save an image record to the database.
+    Create image record in database.
     
     Args:
         db: Database session
-        filename: Name of the saved file
-        content_type: MIME type of the file
-        file_size: Size of the file in bytes
-        filepath: Full path where file is stored
+        filename: Saved filename
+        content_type: MIME type
+        file_size: File size in bytes
+        filepath: Full file path
         
     Returns:
-        The created Image model instance with database-generated fields
+        Created image record
     """
-    # Create new image record
     image = models.Image(
         filename=filename,
         content_type=content_type,
         size=file_size,
-        path=filepath,
+        path=filepath
     )
-    
-    # Save to database
     db.add(image)
     db.commit()
-    
-    # Refresh to get auto-generated fields (id, timestamps, etc.)
     db.refresh(image)
-    
     return image
 
 
 # ============================================================================
-# API Endpoints
+# API Endpoint
 # ============================================================================
 
 @router.post(
@@ -155,49 +126,38 @@ async def upload_image(
     db: Session = Depends(get_db)
 ):
     """
-    Upload an image file.
+    Upload and store an image file.
     
-    Validates file type and size, saves the file to disk,
-    and stores metadata in the database.
+    Validates file type and size, saves to disk, stores metadata in database.
     
-    Args:
-        file: The uploaded image file
-        db: Database session (injected by FastAPI)
-        
     Returns:
-        ImageUploadResponse with success message and file metadata
-        
-    Raises:
-        HTTPException: If validation fails (invalid type or size)
+        Success message with file metadata
     """
-    # Step 1: Validate file type
-    validate_file_type(file.content_type)
+    # Read file content once
+    content = await file.read()
     
-    # Step 2: Read file content and validate size
-    file_content = await file.read()
-    validate_file_size(len(file_content))
+    # Validate file
+    validate_image(file, content)
     
-    # Step 3: Reset file pointer to beginning after reading
-    # This is necessary because we need to read the file again when saving
+    # Generate unique filename
+    filename = generate_filename(file.filename)
+    filepath = UPLOAD_DIR / filename
+    
+    # Reset file pointer for saving
     await file.seek(0)
     
-    # Step 4: Generate unique filename and construct full path
-    unique_filename = generate_unique_filename(file.filename)
-    file_path = UPLOAD_DIR / unique_filename
+    # Save file to disk
+    save_image(file, filepath)
     
-    # Step 5: Save file to disk
-    save_file_to_disk(file, file_path)
-    
-    # Step 6: Save metadata to database
-    image_record = create_image_record(
+    # Save metadata to database
+    image_record = create_db_record(
         db=db,
-        filename=unique_filename,
+        filename=filename,
         content_type=file.content_type,
-        file_size=len(file_content),
-        filepath=str(file_path)
+        file_size=len(content),
+        filepath=str(filepath)
     )
     
-    # Step 7: Return success response with metadata
     return schemas.ImageUploadResponse(
         message="Upload successful",
         metadata=image_record
