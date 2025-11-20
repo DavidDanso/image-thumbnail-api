@@ -10,7 +10,8 @@ from .. import models, schemas
 # Configuration
 UPLOAD_DIR = Path("uploads")
 MAX_FILE_SIZE_MB = 10
-ALLOWED_TYPES = {"image/jpeg", "image/png", "image/gif"}
+ALLOWED_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp", 
+                 "image/svg+xml", "image/heic", "image/heif", "image/avif"}
 
 # Ensure upload directory exists
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
