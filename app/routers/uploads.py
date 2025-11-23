@@ -212,10 +212,7 @@ async def download_image(
     """
     Get metadata for a specific image by ID.
     """
-
-
     image = db.query(models.Image).filter(models.Image.id == id).first()
-    print(current_user.username, image.owner_id, current_user.id)
 
     if not image:
         raise HTTPException(
@@ -247,7 +244,7 @@ async def download_image(
 
     # 4. Return file
     return FileResponse(
-        path=str(file_path),
+        path=str(dest_path),
         media_type=image.content_type,
         filename=image.filename,
         headers={
