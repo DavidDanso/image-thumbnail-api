@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, status, UploadFile, File, HTTPException
 from sqlalchemy.orm import Session
+from fastapi.responses import FileResponse
 from pathlib import Path
 import uuid
 import shutil
@@ -115,7 +116,7 @@ def create_db_record(
 
 
 # ============================================================================
-# Upload Endpoint
+# Uploads Endpoint
 # ============================================================================
 
 @router.post(
@@ -171,9 +172,9 @@ async def upload_image(
 ###################### all uploads { READ } #####################
 @router.get("/upload", response_model=list[schemas.ImageMetadataResponse])
 def get_uploads(db: Session = Depends(get_db), 
-              get_user: int = Depends(oauth2.get_current_user)):
+              current_user: models.User = Depends(oauth2.get_current_user)):
     
-    all_uploads = db.query(models.Image).filter(models.Image.owner_id == get_user.id).all()
+    all_uploads = db.query(models.Image).filter(models.Image.owner_id == current_user.id).all()
     return all_uploads
 
 
@@ -202,3 +203,49 @@ def get_image_metadata(
         )
 
     return image
+
+
+###################### download image { READ } #####################
+@router.get("/{id}/file", response_model=schemas.ImageMetadataResponse)
+async def download_image(
+    id: uuid.UUID, 
+    db: Session = Depends(get_db), 
+    current_user: models.User = Depends(oauth2.get_current_user)
+):
+    """
+    Get metadata for a specific image by ID.
+    """
+
+
+    image = db.query(models.Image).filter(models.Image.id == id).first()
+    print(current_user.username, image.owner_id, current_user.id)
+
+    if not image:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Image not found"
+        )
+
+    if image.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to download this image"
+        )
+
+    # 3. Check file exists
+    file_path = Path(image.path)
+    if not file_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Image file not found on server"
+        )
+    
+    # 4. Return file
+    return FileResponse(
+        path=str(file_path),
+        media_type=image.content_type,
+        filename=image.filename,
+        headers={
+            "Content-Disposition": f"attachment; filename={image.filename}"
+        }
+    )
