@@ -71,16 +71,16 @@ def generate_filename(original_filename: str) -> str:
 # File Operations
 # ============================================================================
 
-def save_image(file: UploadFile, filepath: Path) -> None:
+def save_image(content: bytes, filepath: Path) -> None:
     """
     Save uploaded file to disk.
     
     Args:
-        file: Uploaded file object
+        content: File content in bytes
         filepath: Destination path
     """
     with open(filepath, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+        buffer.write(content)
 
 
 def create_db_record(
@@ -147,11 +147,8 @@ async def upload_image(
     filename = generate_filename(file.filename)
     filepath = UPLOAD_DIR / filename
     
-    # Reset file pointer for saving
-    await file.seek(0)
-    
     # Save file to disk
-    save_image(file, filepath)
+    save_image(content, filepath)
     
     # Save metadata to database
     image_record = create_db_record(
