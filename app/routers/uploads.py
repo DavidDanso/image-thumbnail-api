@@ -237,6 +237,14 @@ async def download_image(
             detail="Image file not found on server"
         )
     
+    # Destination path in downloads folder
+    download_dir = Path("downloads")
+    download_dir.mkdir(exist_ok=True)
+    dest_path = download_dir / file_path.name
+
+    # Copy file to downloads folder
+    shutil.copyfile(str(file_path), str(dest_path))
+
     # 4. Return file
     return FileResponse(
         path=str(file_path),

@@ -11,6 +11,7 @@ build/
 
 # Ignore the uploads folder and all its contents
 uploads/
+downloads/
 
 # --- Virtual environments ---
 .venv/
