@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status, UploadFile, File, HTTPException
+from fastapi import APIRouter, Depends, BackgroundTasks, UploadFile, File, HTTPException, status
 from sqlalchemy.orm import Session
 from fastapi.responses import FileResponse
 from pathlib import Path
@@ -7,6 +7,7 @@ import shutil
 
 from ..database import get_db
 from .. import models, schemas, oauth2
+from .thumbnail_service import generate_thumbnail
 
 
 # Configuration
@@ -17,6 +18,8 @@ ALLOWED_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp",
 
 # Ensure upload directory exists
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+THUMBNAIL_DIR = Path("uploads/thumbnails")
+THUMBNAIL_DIR.mkdir(parents=True, exist_ok=True)
 
 # Router setup
 router = APIRouter(prefix="/api/images", tags=["Uploads"])
@@ -115,20 +118,77 @@ def create_db_record(
     return db_image
 
 
-# ============================================================================
-# Uploads Endpoint
-# ============================================================================
+def create_thumbnail_background(
+    db: Session,
+    image_id: uuid.UUID,
+    image_path: str,
+    thumbnail_id: uuid.UUID,
+    width: int,
+    height: int
+):
+    """
+    Background task to generate thumbnail and update DB.
+    """
+    try:
+        # Generate unique filename
+        thumbnail_filename = f"{image_id}_thumb_{width}x{height}.jpg"
+        thumbnail_path = THUMBNAIL_DIR / thumbnail_filename
+        
+        # Generate thumbnail
+        actual_width, actual_height = generate_thumbnail(
+            source_path=image_path,
+            output_path=str(thumbnail_path),
+            width=width,
+            height=height
+        )
+        
+        # Update DB: mark as ready
+        thumbnail = db.query(models.Thumbnail).filter(
+            models.Thumbnail.id == thumbnail_id
+        ).first()
+        
+        if thumbnail:
+            thumbnail.status = "ready"
+            thumbnail.path = str(thumbnail_path)
+            thumbnail.width = actual_width
+            thumbnail.height = actual_height
+            db.commit()
+    
+    except Exception as e:
+        # If failed, mark as failed
+        thumbnail = db.query(models.Thumbnail).filter(
+            models.Thumbnail.id == thumbnail_id
+        ).first()
+        
+        if thumbnail:
+            thumbnail.status = "failed"
+            db.commit()
+        
+        print(f"Thumbnail generation failed: {e}")
 
+
+# ============================================================================
+# Uploads and Thumbnails Endpoint
+# ============================================================================
 @router.post(
     "/upload",
     status_code=status.HTTP_201_CREATED,
-    response_model=schemas.ImageUploadResponse
+    response_model=schemas.ImageUploadResult
 )
 async def upload_image(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(oauth2.get_current_user)
 ):
+
+    """
+    Upload image and trigger thumbnail generation.
+    """
+    # Validate file type
+    if not file.content_type.startswith("image/"):
+        raise HTTPException(400, "File must be an image")
+    
     """
     Upload and store an image file.
     
@@ -159,11 +219,66 @@ async def upload_image(
         filepath=str(filepath),
         owner_id=current_user.id
     )
+
+    # Create Thumbnail record (pending)
+    thumbnail_width = 500
+    thumbnail_height = 500
     
-    return schemas.ImageUploadResponse(
-        message="Image uploaded successfully",
-        metadata=image_record
+    db_thumbnail = models.Thumbnail(
+        image_id=image_record.id,
+        width=thumbnail_width,
+        height=thumbnail_height,
+        status="pending"
     )
+    db.add(db_thumbnail)
+    db.commit()
+    db.refresh(db_thumbnail)
+    
+    # Trigger background task
+    background_tasks.add_task(
+        create_thumbnail_background,
+        db=db,
+        image_id=image_record.id,
+        image_path=str(filepath),
+        thumbnail_id=db_thumbnail.id,
+        width=thumbnail_width,
+        height=thumbnail_height
+    )
+    
+    return {
+        "image_id": image_record.id,
+        "thumbnail_id": db_thumbnail.id,
+        "thumbnail_status": "pending"
+    }
+
+
+###################### thumbnail status { READ } #####################
+@router.get("/{thumbnail_id}/thumbnails")
+def get_thumbnail_status(
+    thumbnail_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(oauth2.get_current_user)
+):
+    """
+    Check thumbnail generation status.
+    """
+    thumbnail = db.query(models.Thumbnail).filter(
+        models.Thumbnail.id == thumbnail_id
+    ).first()
+    
+    if not thumbnail:
+        raise HTTPException(404, "Thumbnail not found")
+    
+    # if thumbnail.image_id.owner_id != current_user.id:
+    #     raise HTTPException(403, "Not authorized to access this thumbnail")
+    
+    return {
+        "id": thumbnail.id,
+        "status": thumbnail.status,
+        "width": thumbnail.width,
+        "height": thumbnail.height,
+        "path": thumbnail.path
+    }
 
 
 ###################### all uploads { READ } #####################

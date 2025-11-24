@@ -55,3 +55,8 @@ class ImageMetadataResponse(BaseModel):
 class ImageUploadResponse(BaseModel):
     message: str
     metadata: ImageMetadataResponse
+
+class ImageUploadResult(BaseModel):
+    image_id: UUID
+    thumbnail_id: UUID
+    thumbnail_status: str

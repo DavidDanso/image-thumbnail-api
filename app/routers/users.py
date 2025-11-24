@@ -19,21 +19,6 @@ def get_profile(current_user: models.User = Depends(oauth2.get_current_user)):
 
     return current_user
 
-###################### get user by ID { READ } #####################
-@router.get("/{id}", response_model=schemas.UserResponse)
-def get_user(id: UUID, db: Session = Depends(get_db), 
-             current_user: models.User = Depends(oauth2.get_current_user)):
-    # Authorization check
-    if current_user.id != id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, 
-                          detail="Not authorized to view this user")
-    
-    user = db.query(models.User).filter(models.User.id == id).first()
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, 
-                          detail="User not found")
-    return user
-
 ###################### update user { UPDATE } #####################
 @router.put("/{id}", response_model=schemas.UserResponse)
 def update_user(id: UUID, user_update: schemas.UserCreate,
