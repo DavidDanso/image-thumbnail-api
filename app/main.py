@@ -4,7 +4,7 @@ from .database import engine
 from .routers import auth, users, uploads
 from fastapi.middleware.cors import CORSMiddleware
 
-models.Base.metadata.create_all(bind=engine)
+# models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
