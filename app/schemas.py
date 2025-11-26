@@ -22,6 +22,13 @@ class UserResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class ImageOwnerResponse(BaseModel):
+    id: UUID
+    username: str
+
+    class Config:
+        from_attributes = True
+
 
     
 ###################### LOGIN SCEHMAS
@@ -43,7 +50,8 @@ class TokenData(BaseModel):
 ###################### THUMBNAIL SCHEMAS
 class ThumbnailResponse(BaseModel):
     id: UUID
-    created_at: datetime
+    width: int
+    height: int
 
     class Config:
         from_attributes = True
@@ -55,7 +63,7 @@ class ImageMetadataResponse(BaseModel):
     content_type: str
     size: int
     path: str
-    owner: UserResponse
+    owner: ImageOwnerResponse
     thumbnails: List[ThumbnailResponse]
     
     class Config:
@@ -63,8 +71,7 @@ class ImageMetadataResponse(BaseModel):
 
 class ImageUploadResult(BaseModel):
     image_id: UUID
-    thumbnail_id: UUID
-    thumbnail_status: str
+    thumbnails: List[ThumbnailResponse]
 
 # class ImageUploadResponse(BaseModel):
 #     message: str

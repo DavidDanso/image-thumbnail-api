@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, BackgroundTasks, UploadFile, File, HTTPException, status
+from fastapi import APIRouter, Depends, BackgroundTasks, UploadFile, File, HTTPException, status, Response
 from sqlalchemy.orm import Session
 from fastapi.responses import FileResponse
 from pathlib import Path
 import uuid
 import shutil
+import os
 
 from ..database import get_db
 from .. import models, schemas, oauth2
@@ -82,6 +83,7 @@ def save_image(content: bytes, filepath: Path) -> None:
         content: File content in bytes
         filepath: Destination path
     """
+    filepath.parent.mkdir(parents=True, exist_ok=True)
     with open(filepath, "wb") as buffer:
         buffer.write(content)
 
@@ -133,6 +135,9 @@ def create_thumbnail_background(
         # Generate unique filename
         thumbnail_filename = f"{image_id}_thumb_{width}x{height}.jpg"
         thumbnail_path = THUMBNAIL_DIR / thumbnail_filename
+        
+        # Ensure thumbnail directory exists
+        thumbnail_path.parent.mkdir(parents=True, exist_ok=True)
         
         # Generate thumbnail
         actual_width, actual_height = generate_thumbnail(
@@ -220,35 +225,36 @@ async def upload_image(
         owner_id=current_user.id
     )
 
-    # Create Thumbnail record (pending)
-    thumbnail_width = 500
-    thumbnail_height = 500
+    # Create Thumbnail records (pending)
+    THUMBNAIL_SIZES = [(200, 200), (500, 500), (800, 800)]
+    created_thumbnails = []
     
-    db_thumbnail = models.Thumbnail(
-        image_id=image_record.id,
-        width=thumbnail_width,
-        height=thumbnail_height,
-        status="pending"
-    )
-    db.add(db_thumbnail)
-    db.commit()
-    db.refresh(db_thumbnail)
-    
-    # Trigger background task
-    background_tasks.add_task(
-        create_thumbnail_background,
-        db=db,
-        image_id=image_record.id,
-        image_path=str(filepath),
-        thumbnail_id=db_thumbnail.id,
-        width=thumbnail_width,
-        height=thumbnail_height
-    )
+    for width, height in THUMBNAIL_SIZES:
+        db_thumbnail = models.Thumbnail(
+            image_id=image_record.id,
+            width=width,
+            height=height,
+            status="pending"
+        )
+        db.add(db_thumbnail)
+        db.commit()
+        db.refresh(db_thumbnail)
+        created_thumbnails.append(db_thumbnail)
+        
+        # Trigger background task
+        background_tasks.add_task(
+            create_thumbnail_background,
+            db=db,
+            image_id=image_record.id,
+            image_path=str(filepath),
+            thumbnail_id=db_thumbnail.id,
+            width=width,
+            height=height
+        )
     
     return {
         "image_id": image_record.id,
-        "thumbnail_id": db_thumbnail.id,
-        "thumbnail_status": "pending"
+        "thumbnails": created_thumbnails
     }
 
 
@@ -320,17 +326,9 @@ async def download_image(
             detail="Image file not found on server"
         )
     
-    # Destination path in downloads folder
-    download_dir = Path("downloads")
-    download_dir.mkdir(exist_ok=True)
-    dest_path = download_dir / file_path.name
-
-    # Copy file to downloads folder
-    shutil.copyfile(str(file_path), str(dest_path))
-
     # 4. Return file
     return FileResponse(
-        path=str(dest_path),
+        path=str(file_path),
         media_type=image.content_type,
         filename=image.filename,
         headers={
@@ -362,8 +360,24 @@ def delete_image(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to delete this image"
         )
+    
+    try:
+        # Delete main image file
+        if image.path and os.path.exists(image.path):
+            os.remove(image.path)
 
-    image_query.delete(synchronize_session=False)
+        # Delete thumbnail files
+        for thumbnail in image.thumbnails:
+            if thumbnail.path and os.path.exists(thumbnail.path):
+                os.remove(thumbnail.path)
+                
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete image files: {str(e)}"
+        )
+
+    db.delete(image)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
