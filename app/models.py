@@ -37,7 +37,7 @@ class Thumbnail(Base):
     width = Column(Integer, nullable=False)
     height = Column(Integer, nullable=False)
     path = Column(String, nullable=True)
-    status = Column(String, nullable=False)  # "pending", "ready", "failed"
+    status = Column(String, nullable=False)
     created_at = Column(TIMESTAMP(timezone=True), server_default=text("now()"), nullable=False)
     
     image = relationship("Image", back_populates="thumbnails")

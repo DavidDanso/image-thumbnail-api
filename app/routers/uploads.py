@@ -252,35 +252,6 @@ async def upload_image(
     }
 
 
-###################### thumbnail status { READ } #####################
-@router.get("/{thumbnail_id}/thumbnails")
-def get_thumbnail_status(
-    thumbnail_id: uuid.UUID,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(oauth2.get_current_user)
-):
-    """
-    Check thumbnail generation status.
-    """
-    thumbnail = db.query(models.Thumbnail).filter(
-        models.Thumbnail.id == thumbnail_id
-    ).first()
-    
-    if not thumbnail:
-        raise HTTPException(404, "Thumbnail not found")
-    
-    # if thumbnail.image_id.owner_id != current_user.id:
-    #     raise HTTPException(403, "Not authorized to access this thumbnail")
-    
-    return {
-        "id": thumbnail.id,
-        "status": thumbnail.status,
-        "width": thumbnail.width,
-        "height": thumbnail.height,
-        "path": thumbnail.path
-    }
-
-
 ###################### all uploads { READ } #####################
 @router.get("/upload", response_model=list[schemas.ImageMetadataResponse])
 def get_uploads(db: Session = Depends(get_db), 
@@ -366,3 +337,61 @@ async def download_image(
             "Content-Disposition": f"attachment; filename={image.filename}"
         }
     )
+
+###################### get image metadata by ID { DELETE } #####################
+@router.delete("/{id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_image(
+    id: uuid.UUID, 
+    db: Session = Depends(get_db), 
+    current_user: models.User = Depends(oauth2.get_current_user)
+):
+    """
+    Delete a specific image by ID.
+    """
+    image_query = db.query(models.Image).filter(models.Image.id == id)
+    image = image_query.first()
+
+    if not image:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Image not found"
+        )
+
+    if image.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to delete this image"
+        )
+
+    image_query.delete(synchronize_session=False)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    
+###################### thumbnail status { READ } #####################
+@router.get("/{thumbnail_id}/thumbnails")
+def get_thumbnail_status(
+    thumbnail_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(oauth2.get_current_user)
+):
+    """
+    Check thumbnail generation status.
+    """
+    thumbnail = db.query(models.Thumbnail).filter(
+        models.Thumbnail.id == thumbnail_id
+    ).first()
+    
+    if not thumbnail:
+        raise HTTPException(404, "Thumbnail not found")
+    
+    # if thumbnail.image_id.owner_id != current_user.id:
+    #     raise HTTPException(403, "Not authorized to access this thumbnail")
+    
+    return {
+        "id": thumbnail.id,
+        "status": thumbnail.status,
+        "width": thumbnail.width,
+        "height": thumbnail.height,
+        "path": thumbnail.path
+    }
