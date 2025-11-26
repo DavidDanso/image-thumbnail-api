@@ -369,7 +369,7 @@ def delete_image(
 
     
 ###################### thumbnail status { READ } #####################
-@router.get("/{thumbnail_id}/thumbnails")
+@router.get("/thumbnails/{thumbnail_id}")
 def get_thumbnail_status(
     thumbnail_id: uuid.UUID,
     db: Session = Depends(get_db),
@@ -383,13 +383,20 @@ def get_thumbnail_status(
     ).first()
     
     if not thumbnail:
-        raise HTTPException(404, "Thumbnail not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Thumbnail not found"
+        )
     
-    # if thumbnail.image_id.owner_id != current_user.id:
-    #     raise HTTPException(403, "Not authorized to access this thumbnail")
+    if thumbnail.image.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this thumbnail"
+        )
     
     return {
         "id": thumbnail.id,
+        "image_id": thumbnail.image_id,
         "status": thumbnail.status,
         "width": thumbnail.width,
         "height": thumbnail.height,
